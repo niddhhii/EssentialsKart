@@ -1,11 +1,22 @@
 from flask import Flask, request, make_response, jsonify
-from firebase import firebase
-import firebase_admin
-from firebase_admin import credentials
-
+import pyrebase
 from datetime import date
+import config
+from firebase import firebase
+import csv
 
 app = Flask(__name__)
+
+config = {
+    "apiKey": config.apikey,
+    "authDomain": config.authDomain,
+    "databaseURL": config.databaseURL,
+    "storageBucket": config.storageBucket,
+    "serviceAccount": config.firebasesdk
+}
+
+firebaseObj = pyrebase.initialize_app(config)
+fb_app = firebase.FirebaseApplication(config['databaseURL'], None)
 
 
 @app.route('/')
@@ -20,35 +31,90 @@ def getAction():
 
 
 def pushToDB():
-    firebase_obj = firebase.FirebaseApplication('https://essentials-kart.firebaseio.com/', None)
+    db = firebaseObj.database()
     req = request.get_json(force=True)
     params = req.get('queryResult').get('parameters')
     sess = req.get('session')[-36:] + "-" + str(date.today())
-    print(sess)
-    curr_sess = firebase_obj.get('/orders', sess, connection=None)
-    if curr_sess is None:
-        print(1)
+    curr_orders = fb_app.get('/orders', sess)
+    if curr_orders is not None:
+        item_list = params['items']
+        num_list = params['number']
+        order_dict = mkdict(curr_orders)
+        k = len(order_dict)
+        poslist = []
+        neglist = []
+        for i in range(len(item_list)):
+            price = get_price(item_list[i])
+            if price != -1:
+                temp = [item_list[i], int(num_list[i]), price]
+                order_dict.update({i + k: temp})
+                poslist.append(item_list[i])
+            else:
+                neglist.append(item_list[i])
+        db.child('orders').child(sess).update(order_dict)
+    else:
         item_list = params['items']
         num_list = params['number']
         order_dict = {}
+        poslist = []
+        neglist = []
         for i in range(len(item_list)):
-            temp = [item_list[i], num_list[i]]
-            order_dict.update({i: temp})
-        sess_dict = {sess: order_dict}
-        print(sess_dict)
-    else:
-        print(2)
-        item_list = params['items']
-        num_list = params['number']
-        sess = []
-        for i in range(len(item_list)):
-            temp = [item_list[i], num_list[i]]
-            sess.append(temp)
-        print(sess)
-        # session['sess'] = sess
+            price = get_price(item_list[i])
+            if price != -1:
+                temp = [item_list[i], int(num_list[i]), price]
+                order_dict.update({i: temp})
+                poslist.append(item_list[i])
+            else:
+                neglist.append(item_list[i])
+        db.child('orders').child(sess).set(order_dict)
+    text = ""
+    if len(neglist) != 0:
+        i = 0
+        text = "We don't sell "
+        for item in neglist:
+            if i == (len(neglist) - 2):
+                text += item + " and "
+            elif i == (len(neglist) - 1):
+                text += item + ". "
+            else:
+                text += item + ", "
+            i += 1
+        if len(poslist) != 0:
+            text += "However, we have added "
+            i = 0
+            for item in poslist:
+                if i == (len(poslist) - 2):
+                    text += item + " and "
+                elif i == (len(poslist) - 1):
+                    text += item
+                else:
+                    text += item + ", "
+                i += 1
+            text += " to your cart."
+    return text
 
-    result = firebase_obj.post('/actions', sess_dict, connection=None)
-    print(result)
+
+def mkdict(temp):
+    order_dict = {}
+    i = 0
+    for x in temp:
+        order_dict.update({i: x})
+        i += 1
+    return order_dict
+
+
+def get_price(item):
+    with open('items.csv') as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter=',')
+        line_count = 0
+        for row in csv_reader:
+            if line_count == 0:
+                line_count += 1
+                continue
+            else:
+                if row[0] == item:
+                    return int(row[1])
+        return -1
 
 
 @app.route('/webhook', methods=['POST'])
@@ -56,9 +122,9 @@ def webhook():
     action = getAction()
     # print(action)
     if action == 'order_items':  # save items to session
-        pushToDB()
+        text = pushToDB()
         reply = {
-            "fulfillmentText": "Order Items",
+            "fulfillmentText": text,
         }
         return make_response(jsonify(reply))
     elif action == 'input.welcome':  # send the items pdf
@@ -84,6 +150,4 @@ def webhook():
 
 
 if __name__ == '__main__':
-    cred = credentials.Certificate("firebase-adminsdk.json")
-    firebase_admin.initialize_app(cred)
     app.run()

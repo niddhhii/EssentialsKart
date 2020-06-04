@@ -2,3 +2,4 @@ config.py
 firebase-adminsdk.json
 .idea
 /venv
+/integrations

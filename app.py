@@ -14,7 +14,9 @@ config = {
     "authDomain": config.authDomain,
     "databaseURL": config.databaseURL,
     "storageBucket": config.storageBucket,
-    "serviceAccount": config.firebasesdk
+    "serviceAccount": config.firebasesdk,
+    "twilioSID": config.twilioSID,
+    "twilioAUTH": config.twilioAUTH
 }
 
 firebaseObj = pyrebase.initialize_app(config)
@@ -36,7 +38,7 @@ def pushToDB():
     db = firebaseObj.database()
     req = request.get_json(force=True)
     params = req.get('queryResult').get('parameters')
-    sess = req.get('session')[-36:] + "-" + str(date.today())
+    sess = req.get('session')[-13:] + "-" + str(date.today())
     curr_orders = fb_app.get('/orders', sess)
     if curr_orders is not None:
         item_list = params['items']
@@ -116,16 +118,21 @@ def get_price(item):
 
 
 def sendPDF(url):
-    client = Client(config.twilioSID, config.twilioAUTH)
-    from_whatsapp_number = '+14155238886'
-    to_whatsapp_number = '12'
-    message = client.messages.create(body='Hey! I am Natasha. Here to help you out in your order. Please check the '
-                                          'list below to find the essential items that you can order during lockdown'
-                                          'What would you like to order today?',
-                                     media_url=url,
-                                     from_=from_whatsapp_number,
-                                     to=to_whatsapp_number)
-    print(message.sid)
+    req = request.get_json(force=True)
+    username = config['twilioSID']
+    password = config['twilioAUTH']
+    client = Client(username=username, password=password)
+    from_whatsapp_number = 'whatsapp:+14155238886'
+    to_whatsapp_number = req.get('session')[-13:]
+    client.messages.create(body='EssentialsKart Products',
+                           media_url=url,
+                           from_=from_whatsapp_number,
+                           to=to_whatsapp_number)
+    client.messages.create(body='Hey! I am Natasha from EssentialsKart. Here to help you out in your order. '
+                                'Please check the list below to find the essential items that you can order '
+                                'during lockdown. So, what would you like to order today?',
+                           from_=from_whatsapp_number,
+                           to=to_whatsapp_number)
 
 
 def genPDF():
@@ -150,13 +157,22 @@ def check_phone():
     if ch_contact is not None:
         return "It seems we have already met."  # ask for otp
     else:
-        sess = req.get('session')[-36:]
-        db = firebaseObj.database()
-        db.child('users').child(phone).set(sess)
         return "Please enter your name now."
 
 
-@app.route('/webhook', methods=['POST'])
+def conf_details():
+    req = request.get_json(force=True)
+    details = req.get('queryResult').get('outputContexts')[2].get('parameters')
+    db = firebaseObj.database()
+    details_dict = {'name': details['name.original'], 'email': details['email'], 'zipcode': details['zipcode']}
+    db.child('users').child(details['contact']).set(details_dict)
+
+
+def get_order():
+    return ""
+
+
+@app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     action = getAction()
     # print(action)
@@ -167,6 +183,8 @@ def webhook():
         }
         return make_response(jsonify(reply))
     elif action == 'input.welcome':  # send the items pdf
+        url = "https://github.com/ItsTheKayBee/chatbot-webhook-API/raw/master/price_list.pdf"
+        sendPDF(url)
         reply = {
             "fulfillmentText": "Send PDF",
         }
@@ -178,8 +196,9 @@ def webhook():
         }
         return make_response(jsonify(reply))
     elif action == 'confirm_details':  # ask for confirmation about order
+        conf_details()
         reply = {
-            "fulfillmentText": "Details Confirmed",
+            "fulfillmentText": "",
         }
         return make_response(jsonify(reply))
     elif action == 'confirm_order':  # send final receipt over email and wapp

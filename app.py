@@ -1,5 +1,8 @@
 import csv
+import smtplib
 from datetime import date
+from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
 
 import pyrebase
 from firebase import firebase
@@ -18,7 +21,9 @@ config = {
     "storageBucket": config.storageBucket,
     "serviceAccount": config.firebasesdk,
     "twilioSID": config.twilioSID,
-    "twilioAUTH": config.twilioAUTH
+    "twilioAUTH": config.twilioAUTH,
+    "appPWD": config.appPWD,
+    "fromEmail": config.fromEmail
 }
 
 firebaseObj = pyrebase.initialize_app(config)
@@ -155,7 +160,10 @@ def genPDF():
     template_vars = {"title": "Sales Funnel Report - National",
                      "national_pivot_table": ''}
     html_out = template.render(template_vars)
+    pdf = ""
     # HTML(string=html_out).write_pdf("report.pdf")
+
+    return pdf
 
 
 def del_sess():
@@ -177,18 +185,19 @@ def check_phone():
 
 def conf_details():
     req = request.get_json(force=True)
-    details = req.get('queryResult').get('outputContexts')[2].get('parameters')
+    details = req.get('queryResult').get('parameters')
     contact = req.get('session')[-13:]
     db = firebaseObj.database()
-    details_dict = {'name': details['name.original'].title(), 'email': details['email'], 'zipcode': details['zipcode']}
+    details_dict = {'name': details['name']['name'].title(), 'email': details['email'], 'zipcode': details['zipcode']}
     db.child('users').child(contact).set(details_dict)
-    return "Your account has been set up. Please enter a 4 digits passcode for future logins."
+    return ""
 
 
 def get_order():
     req = request.get_json(force=True)
     sess = req.get('session')[-13:] + "-" + str(date.today())
     curr_orders = fb_app.get('/orders', sess)
+    print(curr_orders)
     text = ""
     i = 1
     sums = 0
@@ -232,15 +241,55 @@ def add_mode():
     phone = req.get('session')[-13:]
     mode = req.get('queryResult').get('parameters')['mop']
     ph = fb_app.get('/users', phone)
-    ph.update({'mode': mode})
+    ph['mode'] = mode
     db = firebaseObj.database()
     db.child('users').child(phone).update(ph)
     order = get_order()
-    return "Please check your order details.<br>" + order + " Reply 'Yes' to confirm and 'No' to modify."
+    return "This is your order summary.<br>" + order + " Reply 'Yes' to confirm order and 'No' to cancel."
 
 
 def conf_order():
-    return ""
+    pdf = genPDF()  # here we'll receive a pdf
+    req = request.get_json(force=True)
+    phone = req.get('session')[-13:]
+    ph = fb_app.get('/users', phone)
+    email = ph['email']
+    name = ph['name']
+    message = "Hey {},\n Thank you for ordering with us. We hope you find our services useful. Here is your invoice." \
+        .format(name)
+    text = sendmail(email, message, pdf)
+    return text
+
+
+def sendmail(to_email, message, pdf):
+    from_email = config['fromEmail']
+    password = config['appPWD']
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = "Order Confirmed - EssentialsKart"
+    msg['From'] = from_email
+    msg['To'] = to_email
+
+    # msgText = MIMEText(message + '<img width="100%" src="cid:image">', 'html')
+    msg.attach(message)
+
+    fp = open(pdf, 'rb')  # pdf path or object
+    msgImage = MIMEImage(fp.read())
+    fp.close()
+    msgImage.add_header('Content-ID', '<image>')
+    msg.attach(msgImage)
+
+    response = {}
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as s:
+            s.starttls()
+            s.login(from_email, password)
+            print("Sending Mail:", to_email)
+            s.sendmail(from_email, to_email, msg.as_string())
+        response['email_status'] = "Success"
+    except Exception as err:
+        print(err)
+        response['email_status'] = "Failed"
+    return response
 
 
 def edit_order():
@@ -248,7 +297,19 @@ def edit_order():
 
 
 def edit_details():
-    return ""
+    req = request.get_json(force=True)
+    phone = req.get('session')[-13:]
+    params = req.get('queryResult').get('parameters')
+    data = fb_app.get('/users', phone)
+    for key in params:
+        if params[key] != "":
+            if key == "name1":
+                data[key.replace("1", "")] = params['name1']['name']
+            else:
+                data[key.replace("1", "")] = params[key]
+    db = firebaseObj.database()
+    db.child('users').child(phone).set(data)
+    return "Are your details correct now?"
 
 
 @app.route('/webhook', methods=['GET', 'POST'])

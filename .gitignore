@@ -2,6 +2,8 @@ config.py
 firebase-adminsdk.json
 .idea
 /venv
+integrations
+integrations/dialogflow-integrations
 /integrations/dialogflow-integrations/Dockerfile
 /integrations/dialogflow-integrations/twilio/natasha-key.json
 /integrations/dialogflow-integrations/twilio/server.js

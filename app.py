@@ -128,11 +128,23 @@ def sendPDF(url):
                            media_url=url,
                            from_=from_whatsapp_number,
                            to=to_whatsapp_number)
-    client.messages.create(body='Hey! I am Natasha from EssentialsKart. Here to help you out in your order. '
-                                'Please check the list below to find the essential items that you can order '
-                                'during lockdown. So, what would you like to order today?',
-                           from_=from_whatsapp_number,
-                           to=to_whatsapp_number)
+    ch_contact = fb_app.get('/users', to_whatsapp_number)
+    if ch_contact is not None:
+        name = ch_contact['name']
+        client.messages.create(
+            body='Hey ' + name + '! Glad to see you again. It\'s Natasha again from EssentialsKart. Here to help you '
+                                 'out in your order. '
+                                 'Please check the list below to find the essential items that you can order '
+                                 'during lockdown. So, what would you like to order today?',
+            from_=from_whatsapp_number,
+            to=to_whatsapp_number)
+    else:
+        client.messages.create(
+            body='Hey! I am Natasha from EssentialsKart. Here to help you out in your order. '
+                 'Please check the list below to find the essential items that you can order '
+                 'during lockdown. So, what would you like to order today?',
+            from_=from_whatsapp_number,
+            to=to_whatsapp_number)
 
 
 def genPDF():
@@ -152,24 +164,71 @@ def del_sess():
 
 def check_phone():
     req = request.get_json(force=True)
-    phone = req.get('queryResult').get('parameters').get('contact')
+    phone = req.get('session')[-13:]
     ch_contact = fb_app.get('/users', phone)
     if ch_contact is not None:
-        return "It seems we have already met."  # ask for otp
+        name = ch_contact['name']
+        return name + ", please enter your passcode to proceed."
     else:
-        return "Please enter your name now."
+        return "We have to setup an account for you to proceed further. Please enter your name."
 
 
 def conf_details():
     req = request.get_json(force=True)
     details = req.get('queryResult').get('outputContexts')[2].get('parameters')
+    contact = req.get('session')[-13:]
     db = firebaseObj.database()
     details_dict = {'name': details['name.original'], 'email': details['email'], 'zipcode': details['zipcode']}
-    db.child('users').child(details['contact']).set(details_dict)
+    db.child('users').child(contact).set(details_dict)
+    return "Your account has been set up. Please enter a 4 digits passcode for future logins."
 
 
 def get_order():
+    req = request.get_json(force=True)
+    sess = req.get('session')[-13:] + "-" + str(date.today())
+    curr_orders = fb_app.get('/orders', sess)
+    text = ""
+    i = 1
+    for order in curr_orders:
+        text += i + ". " + order['name']
     return ""
+
+
+def check_pwd():
+    req = request.get_json(force=True)
+    phone = req.get('session')[-13:]
+    password = fb_app.get('/users', phone)['passcode']
+    passcode = req.get('queryResult').get('parameters')['passcode']
+    if password != passcode:
+        return "Wrong passcode. Please try again."
+    else:
+        return "Authentication successful. Would you like to pay cash on delivery or by card?"
+
+
+def add_pwd():
+    req = request.get_json(force=True)
+    phone = req.get('session')[-13:]
+    passcode = req.get('queryResult').get('parameters')['new_passcode']
+    ph = fb_app.get('/users', phone)
+    if len(str(int(passcode))) == 4 and str(int(passcode)).isnumeric():
+        ph.update({'passcode': passcode})
+        db = firebaseObj.database()
+        db.child('users').child(phone).update(ph)
+        return "Congrats, " + ph['name'] + "! You are all set. Would you like to pay cash on delivery or by card?"
+    else:
+        return "Please enter a valid 4 digit numerical passcode."
+
+
+def add_mode():
+    req = request.get_json(force=True)
+    phone = req.get('session')[-13:]
+    mode = req.get('queryResult').get('parameters')['mode']
+    ph = fb_app.get('/users', phone)
+    ph.update({'mode': mode})
+    db = firebaseObj.database()
+    db.child('users').child(phone).update(ph)
+    order = get_order()
+    return "Please check your order details. " + order + " Reply 'Yes' to confirm and 'No' to modify."
 
 
 @app.route('/webhook', methods=['GET', 'POST'])
@@ -184,9 +243,9 @@ def webhook():
         return make_response(jsonify(reply))
     elif action == 'input.welcome':  # send the items pdf
         url = "https://github.com/ItsTheKayBee/chatbot-webhook-API/raw/master/price_list.pdf"
-        sendPDF(url)
+        # sendPDF(url)      # uncomment later
         reply = {
-            "fulfillmentText": "Send PDF",
+            "fulfillmentText": "",
         }
         return make_response(jsonify(reply))
     elif action == 'OrderItems.OrderItems-cancel':  # delete the session and end it
@@ -196,9 +255,9 @@ def webhook():
         }
         return make_response(jsonify(reply))
     elif action == 'confirm_details':  # ask for confirmation about order
-        conf_details()
+        text = conf_details()
         reply = {
-            "fulfillmentText": "",
+            "fulfillmentText": text,
         }
         return make_response(jsonify(reply))
     elif action == 'confirm_order':  # send final receipt over email and wapp
@@ -216,8 +275,32 @@ def webhook():
             "fulfillmentText": "Edit Details",
         }
         return make_response(jsonify(reply))
-    elif action == 'check_number':  # check phone
+    elif action == 'stop_order':  # check phone
         text = check_phone()
+        reply = {
+            "fulfillmentText": text,
+        }
+        return make_response(jsonify(reply))
+    elif action == 'check_passcode':  # check phone
+        text = check_pwd()
+        reply = {
+            "fulfillmentText": text,
+        }
+        return make_response(jsonify(reply))
+    elif action == 'get_passcode':  # check phone
+        text = add_pwd()
+        reply = {
+            "fulfillmentText": text,
+        }
+        return make_response(jsonify(reply))
+    elif action == 'mode':  # check phone
+        text = add_mode()
+        reply = {
+            "fulfillmentText": text,
+        }
+        return make_response(jsonify(reply))
+    elif action == 'add_mode':  # check phone
+        text = add_mode()
         reply = {
             "fulfillmentText": text,
         }

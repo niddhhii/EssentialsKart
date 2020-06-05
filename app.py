@@ -1,11 +1,13 @@
-from flask import Flask, request, make_response, jsonify
-import pyrebase
-from datetime import date
-import config
-from firebase import firebase
 import csv
-from twilio.rest import Client
+from datetime import date
+
+import pyrebase
+from firebase import firebase
+from flask import Flask, request, make_response, jsonify
 from jinja2 import Environment, FileSystemLoader
+from twilio.rest import Client
+
+import config
 
 app = Flask(__name__)
 
@@ -178,7 +180,7 @@ def conf_details():
     details = req.get('queryResult').get('outputContexts')[2].get('parameters')
     contact = req.get('session')[-13:]
     db = firebaseObj.database()
-    details_dict = {'name': details['name.original'], 'email': details['email'], 'zipcode': details['zipcode']}
+    details_dict = {'name': details['name.original'].title(), 'email': details['email'], 'zipcode': details['zipcode']}
     db.child('users').child(contact).set(details_dict)
     return "Your account has been set up. Please enter a 4 digits passcode for future logins."
 
@@ -189,9 +191,15 @@ def get_order():
     curr_orders = fb_app.get('/orders', sess)
     text = ""
     i = 1
-    for order in curr_orders:
-        text += i + ". " + order['name']
-    return ""
+    sums = 0
+    for item in curr_orders:
+        sums += curr_orders[item][0] * curr_orders[item][1]
+        text += "{}. {}     {}  x    Rs. {}  =>  Rs. {}<br>".format(i, item.title(), curr_orders[item][0],
+                                                                    curr_orders[item][1],
+                                                                    (curr_orders[item][0] * curr_orders[item][1]))
+        i += 1
+    text += "Grand Total: {}<br>".format(sums)
+    return text
 
 
 def check_pwd():
@@ -222,19 +230,30 @@ def add_pwd():
 def add_mode():
     req = request.get_json(force=True)
     phone = req.get('session')[-13:]
-    mode = req.get('queryResult').get('parameters')['mode']
+    mode = req.get('queryResult').get('parameters')['mop']
     ph = fb_app.get('/users', phone)
     ph.update({'mode': mode})
     db = firebaseObj.database()
     db.child('users').child(phone).update(ph)
     order = get_order()
-    return "Please check your order details. " + order + " Reply 'Yes' to confirm and 'No' to modify."
+    return "Please check your order details.<br>" + order + " Reply 'Yes' to confirm and 'No' to modify."
+
+
+def conf_order():
+    return ""
+
+
+def edit_order():
+    return ""
+
+
+def edit_details():
+    return ""
 
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     action = getAction()
-    # print(action)
     if action == 'order_items':  # save items to session
         text = pushToDB()
         reply = {
@@ -261,18 +280,21 @@ def webhook():
         }
         return make_response(jsonify(reply))
     elif action == 'confirm_order':  # send final receipt over email and wapp
+        text = conf_order()
         reply = {
-            "fulfillmentText": "Order confirmed",
+            "fulfillmentText": text,
         }
         return make_response(jsonify(reply))
     elif action == 'edit_order':  # edit order
+        text = edit_order()
         reply = {
-            "fulfillmentText": "Order edited",
+            "fulfillmentText": text,
         }
         return make_response(jsonify(reply))
     elif action == 'edit_details':  # edit individual detail
+        text = edit_details()
         reply = {
-            "fulfillmentText": "Edit Details",
+            "fulfillmentText": text,
         }
         return make_response(jsonify(reply))
     elif action == 'stop_order':  # check phone
@@ -294,12 +316,6 @@ def webhook():
         }
         return make_response(jsonify(reply))
     elif action == 'mode':  # check phone
-        text = add_mode()
-        reply = {
-            "fulfillmentText": text,
-        }
-        return make_response(jsonify(reply))
-    elif action == 'add_mode':  # check phone
         text = add_mode()
         reply = {
             "fulfillmentText": text,

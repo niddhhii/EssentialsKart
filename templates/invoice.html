@@ -1,0 +1,150 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Invoice</title>
+
+    <style>
+
+    .invoice-box {
+        max-width: 800px;
+        margin: auto;
+        padding: 30px;
+        border: 1px solid #eee;
+        font-size: 19px;
+        line-height: 24px;
+        font-family: 'Courier New', 'Helvetica';
+        color: #555;
+    }
+
+    .center{
+    	text-align: center;
+    }
+
+    .invoice-box table {
+        width: 100%;
+        line-height: inherit;
+        text-align: left;
+    }
+
+    .invoice-box table td {
+        padding: 5px;
+        vertical-align: top;
+    }
+
+    .invoice-box table tr.top table td {
+        padding-bottom: 20px;
+    }
+
+    .invoice-box table tr.top table td.title {
+        font-size: 45px;
+        line-height: 45px;
+        color: #333;
+    }
+
+    .invoice-box table tr.information table td {
+        padding-bottom: 40px;
+    }
+
+    .invoice-box table tr.heading td {
+        background: #eee;
+        border-bottom: 1px solid #000;
+        font-weight: bold;
+    }
+
+    .invoice-box table tr.details td {
+        padding-bottom: 20px;
+    }
+
+    .invoice-box table tr.item td{
+        border-bottom: 1px solid #eee;
+    }
+
+    .invoice-box table tr.item.last td {
+        border-bottom: none;
+    }
+
+    @media only screen and (max-width: 600px) {
+        .invoice-box table tr.top table td {
+            width: 100%;
+            display: block;
+            text-align: center;
+        }
+
+        .invoice-box table tr.information table td {
+            width: 100%;
+            display: block;
+            text-align: center;
+        }
+    }
+    </style>
+</head>
+
+<body>
+<div class="invoice-box">
+    <table cellpadding="0" cellspacing="0">
+        <tr class="top">
+            <td colspan="2">
+                <table>
+                    <tr>
+                        <td class="title">
+                            <img src="{{url_for('static',filename='logo.jpg')}}" style="width:100%; max-width:300px;">
+                        </td>
+
+                        <td align="right"><br>
+                            <b>Created On: {{ todays_date }}</b><br>
+                            <b>Delivery By: {{ delivery_date }}</b>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <tr class="information">
+            <td colspan="2">
+                <table>
+                    <tr>
+                        <td>
+                            <br>
+                            <b>Mode Of Payment</b> - {{ users.mode }}
+                        </td>
+
+                        <td align="right">
+                            <b>Name</b> - {{ users.name }} <br>
+                            <b>Zipcode</b> - {{ users.zipcode }} <br>
+                            <b>Email</b> - {{ users.email }} <br>
+                            <b>Contact</b> - {{ phone }} <br>
+                        </td>
+
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+    <table border="1" style="border-collapse:collapse;">
+        <tr class="heading center">
+            <td class="center">Item</td>
+            <td class="center">Quantity</td>
+            <td class="center">Price Per Quantity</td>
+            <td class="center">Total Price</td>
+        </tr>
+
+
+        {% for key in orders %}
+        <tr class="item last center">
+            <td class="center"> {{ key }}</td>
+            <td class="center"> {{ orders[key][0] }}</td>
+            <td class="center"> {{ orders[key][1] }}</td>
+            <td class="center"> {{ orders[key][0]*orders[key][1]}}</td>
+        </tr>
+        {% endfor %}
+
+        <tr class="total center">
+            <td class="center" style="border-top: 3px solid #000"></td>
+            <td class="center" style="border-top: 3px solid #000"></td>
+            <td class="center" style="border-top: 3px solid #000"></td>
+            <td class="center" style="border-top: 3px solid #000"><b>Total Amount:</b> {{sum}}</td>
+        </tr>
+    </table>
+</div>
+</body>
+</html>
